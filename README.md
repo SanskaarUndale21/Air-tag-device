@@ -1,102 +1,130 @@
 # Air-tag-device
 
-DIY GPS tracker using an ESP32 microcontroller with a real-time web dashboard. Track your device location live on a map, trigger an alert buzzer remotely, and set geo-fence boundaries.
+DIY GPS tracker using an ESP32 + GPS module with a real-time Flask dashboard deployed on Render. No Firebase, no paid services — just a Flask server, a JSON file, and a single HTML dashboard.
 
-## What's in this repo
+## Architecture
+
+```
+ESP32 + NEO-6M GPS
+    │
+    │  POST /api/data  (every 3 seconds over WiFi)
+    ▼
+Flask server on Render  ──  stores data in tracker_data.json
+    │                    ──  appends to tracker_history.json
+    │  GET /api/status  (every 2 seconds)
+    ▼
+Browser dashboard (index.html served by Flask)
+    │
+    │  POST /api/find  (when you press the button)
+    ▼
+Flask sets find=true  →  ESP32 reads it in next response  →  buzzer + LED
+```
+
+## Repository Structure
 
 ```
 Air-tag-device/
-├── findit/         Next.js 16 web dashboard (deploy on Vercel)
-├── esp32/          ESP32 Arduino firmware
-├── connection.md   Hardware wiring guide
-└── README.md       This file
+├── server/                Flask app (deploy to Render)
+│   ├── app.py             API endpoints + serves HTML
+│   ├── requirements.txt
+│   ├── Procfile
+│   └── templates/
+│       └── index.html     Full dashboard (single file)
+├── esp32/
+│   ├── gps_tracker.ino    Arduino firmware
+│   └── README.md
+├── connection.md          Hardware wiring guide
+├── render.yaml            Render deployment config
+└── README.md
 ```
 
-## How It Works
+---
 
+## Deploy to Render
+
+### 1. Push to GitHub
+
+Make sure your code is pushed to GitHub (this repo).
+
+### 2. Create Render Web Service
+
+1. Go to [render.com](https://render.com) and sign up (free)
+2. Dashboard > **New** > **Web Service**
+3. Connect your GitHub repo (`Air-tag-device`)
+4. Settings:
+   - **Root Directory:** `server`
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `gunicorn app:app`
+   - **Instance Type:** Free
+5. Click **Create Web Service**
+6. Copy the URL shown (e.g. `https://findit-tracker.onrender.com`)
+
+### 3. Flash the ESP32
+
+Open `esp32/gps_tracker.ino` in Arduino IDE and fill in:
+
+```cpp
+#define WIFI_SSID      "YourWiFiName"
+#define WIFI_PASSWORD  "YourWiFiPass"
+#define SERVER_URL     "https://findit-tracker.onrender.com/api/data"
 ```
-ESP32 + GPS module
-       |
-       | writes every 2s
-       v
-Firebase Realtime Database (/tracker)
-       |
-       | real-time listener
-       v
-FindIt Dashboard (Next.js on Vercel)
-       |
-       | sets /tracker/find = true
-       v
-ESP32 triggers buzzer + LED
+
+Then flash to your ESP32 (see `esp32/README.md` for full setup).
+
+### 4. Open the Dashboard
+
+Visit your Render URL in a browser. The dashboard will show live data as soon as the ESP32 gets a GPS fix and starts sending.
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/data` | ESP32 sends GPS data here. Response includes `find` flag. |
+| `GET` | `/api/status` | Dashboard polls this for live state. |
+| `POST` | `/api/find` | Dashboard sets `{"active": true/false}` to trigger buzzer. |
+| `GET` | `/api/history` | Returns last 100 location entries. |
+| `GET` | `/` | Serves the HTML dashboard. |
+
+## ESP32 POST body (to `/api/data`)
+
+```json
+{ "lat": 12.971598, "lng": 77.594562, "alt": 921.4, "sats": 7, "timestamp": 84523 }
 ```
 
-1. The ESP32 reads GPS coordinates (UART) and writes `lat`, `lng`, `alt`, `sats` to Firebase every 2 seconds
-2. The Next.js dashboard listens to Firebase in real time and renders the live location on a Leaflet map
-3. Pressing "Find My Device" on the dashboard sets `/tracker/find = true` in Firebase
-4. The ESP32 polls this flag and triggers the buzzer and LED when it's true
+Response from server:
 
-## Quick Start
+```json
+{ "ok": true, "find": false, "alert": false }
+```
 
-### Hardware
+If `find` is `true`, the ESP32 triggers the buzzer and LED pattern.
 
-See [connection.md](./connection.md) for full wiring.
+---
 
-Components needed:
+## Dashboard Features
+
+- Live map (Leaflet + CartoDB dark tiles — no API key needed)
+- Lat / Lng / Altitude / Satellite count readout
+- Distance from home
+- Geo-fence radius slider (50 m – 1 km) with out-of-range alert (turns red)
+- **Find My Device** button with glowing animation
+- TRACKING / OUT OF RANGE / NO SIGNAL status badge
+- Copy coordinates, Open in Google Maps
+- Location history table (last 100 entries)
+
+## Hardware
+
+See [connection.md](./connection.md) for the full wiring diagram.
+
 - ESP32 DevKit
 - NEO-6M GPS module
 - Active buzzer
 - LED + 220 ohm resistor
 
-### Firmware
+## Note on Free Tier
 
-See [esp32/README.md](./esp32/README.md) for setup.
+Render's free tier **spins down after 15 minutes of inactivity** (cold start ~30 s). Since your ESP32 sends data every 3 seconds, the server will stay awake as long as the device is running.
 
-Edit `esp32/gps_tracker.ino` with your WiFi credentials and Firebase config, then flash via Arduino IDE.
-
-### Dashboard
-
-See [findit/README.md](./findit/README.md) for setup and Vercel deployment.
-
-```bash
-cd findit
-cp .env.local.example .env.local
-# fill in Firebase config
-npm install
-npm run dev
-```
-
-Deploy to Vercel: import the repo, set the 4 `NEXT_PUBLIC_FIREBASE_*` environment variables, and deploy.
-
-## Firebase Setup
-
-1. Create a project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Realtime Database** in test mode
-3. Enable **Anonymous Authentication** (for ESP32 sign-in)
-4. Copy the web app config to `.env.local` and to the ESP32 sketch
-
-Database structure written by the ESP32:
-
-```json
-{
-  "tracker": {
-    "lat": 12.971598,
-    "lng": 77.594562,
-    "alt": 921.4,
-    "sats": 7,
-    "timestamp": 84523,
-    "find": false,
-    "alert": false
-  }
-}
-```
-
-## Dashboard Features
-
-- Live map (Leaflet + CartoDB dark tiles, no API key needed)
-- Lat / Lng / Altitude / Satellite count readout
-- Distance from home calculation
-- Geo-fence with adjustable radius (shows red when device exits)
-- "Find My Device" button with glow effect
-- Location history table (1 entry per minute)
-- Settings page for Firebase config
-- TRACKING / OUT OF RANGE / NO SIGNAL status badge
+Data stored in JSON files is **ephemeral on Render** — it's wiped on each deploy/restart. For permanent history, upgrade to a paid tier or swap the JSON file for a small SQLite/PostgreSQL database.

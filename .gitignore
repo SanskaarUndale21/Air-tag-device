@@ -1,18 +1,18 @@
-# Dependencies
-findit/node_modules/
-findit/.next/
-findit/out/
+# Runtime data files (ephemeral, don't commit)
+server/tracker_data.json
+server/tracker_history.json
 
-# Env files - never commit secrets
-findit/.env.local
-findit/.env.*.local
-.env.local
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Env files
 .env
-
-# Build artifacts
-findit/.next/
-findit/out/
-findit/dist/
+.env.local
 
 # Misc
 .DS_Store
