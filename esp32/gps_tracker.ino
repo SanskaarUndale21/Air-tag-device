@@ -67,24 +67,43 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\nConnected: " + WiFi.localIP().toString());
+
+  // Boot beep — confirms buzzer is wired and working
+  tone(BUZZER_PIN, 2000, 200); delay(300);
+  tone(BUZZER_PIN, 2000, 200); delay(300);
+  Serial.println("[BOOT] Buzzer test done");
 }
 
 // ─── Non-blocking continuous beep (called every loop tick) ──────
 void handleBuzzer() {
   static unsigned long lastToggle = 0;
-  static bool state = false;
+  static bool beepOn = false;
+  static bool prevFind = false;
+
+  // Print once when find flag changes
+  if (findActive != prevFind) {
+    prevFind = findActive;
+    Serial.printf("[BUZZER] findActive = %d\n", (int)findActive);
+  }
 
   if (findActive) {
     if (millis() - lastToggle >= 300) {
       lastToggle = millis();
-      state = !state;
-      digitalWrite(BUZZER_PIN, state ? HIGH : LOW);
-      digitalWrite(LED_PIN,    state ? HIGH : LOW);
+      beepOn = !beepOn;
+      if (beepOn) {
+        tone(BUZZER_PIN, 2000);   // works for both active and passive buzzers
+        digitalWrite(LED_PIN, HIGH);
+      } else {
+        noTone(BUZZER_PIN);
+        digitalWrite(BUZZER_PIN, LOW);
+        digitalWrite(LED_PIN, LOW);
+      }
     }
   } else {
+    noTone(BUZZER_PIN);
     digitalWrite(BUZZER_PIN, LOW);
     digitalWrite(LED_PIN, LOW);
-    state = false;
+    beepOn = false;
   }
 }
 
