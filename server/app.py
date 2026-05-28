@@ -71,26 +71,31 @@ def receive_data():
     with lock:
         now = datetime.now(timezone.utc).isoformat()
 
-        state.update({
-            'lat':       body.get('lat'),
-            'lng':       body.get('lng'),
-            'alt':       round(float(body.get('alt', 0)), 1),
-            'sats':      int(body.get('sats', 0)),
-            'timestamp': int(body.get('timestamp', 0)),
-            'last_seen': now,
-        })
+        # Always update heartbeat fields
+        state['sats']      = int(body.get('sats', 0))
+        state['timestamp'] = int(body.get('timestamp', 0))
+        state['last_seen'] = now
+
+        # Only update location if ESP32 has a GPS fix
+        has_fix = body.get('lat') is not None and not body.get('nofix', False)
+        if has_fix:
+            state['lat'] = body['lat']
+            state['lng'] = body['lng']
+            state['alt'] = round(float(body.get('alt', 0)), 1)
+
         persist_state()
 
-        history.append({
-            'lat':         state['lat'],
-            'lng':         state['lng'],
-            'alt':         state['alt'],
-            'sats':        state['sats'],
-            'recorded_at': now,
-        })
-        if len(history) > MAX_HISTORY:
-            history.pop(0)
-        persist_history()
+        if has_fix:
+            history.append({
+                'lat':         state['lat'],
+                'lng':         state['lng'],
+                'alt':         state['alt'],
+                'sats':        state['sats'],
+                'recorded_at': now,
+            })
+            if len(history) > MAX_HISTORY:
+                history.pop(0)
+            persist_history()
 
         return jsonify({
             'ok':    True,

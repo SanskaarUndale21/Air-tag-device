@@ -88,15 +88,18 @@ void handleBuzzer() {
   }
 }
 
-// ─── Send GPS to server ──────────────────────────────────────────
-bool sendData(double lat, double lng, double alt, int sats) {
+// ─── Send to server (always runs — GPS fix optional) ────────────
+bool sendData(double lat, double lng, double alt, int sats, bool hasFix) {
   if (WiFi.status() != WL_CONNECTED) return false;
 
-  // Build JSON body
-  StaticJsonDocument<200> doc;
-  doc["lat"]       = lat;
-  doc["lng"]       = lng;
-  doc["alt"]       = alt;
+  StaticJsonDocument<256> doc;
+  if (hasFix) {
+    doc["lat"] = lat;
+    doc["lng"] = lng;
+    doc["alt"] = alt;
+  } else {
+    doc["nofix"] = true;   // server keeps existing location, still returns find flag
+  }
   doc["sats"]      = sats;
   doc["timestamp"] = millis() / 1000;
 
@@ -113,11 +116,14 @@ bool sendData(double lat, double lng, double alt, int sats) {
   if (code == 200) {
     String resp = http.getString();
     StaticJsonDocument<128> res;
-    DeserializationError err = deserializeJson(res, resp);
-    if (!err) {
+    if (!deserializeJson(res, resp)) {
       findActive = res["find"].as<bool>();
     }
-    Serial.printf("[OK] %.6f, %.6f  sats=%d  find=%d\n", lat, lng, sats, (int)findActive);
+    if (hasFix) {
+      Serial.printf("[OK] %.6f, %.6f  sats=%d  find=%d\n", lat, lng, sats, (int)findActive);
+    } else {
+      Serial.printf("[PING] no fix  sats=%d  find=%d\n", sats, (int)findActive);
+    }
     http.end();
     return true;
   }
@@ -149,24 +155,22 @@ void loop() {
     return;
   }
 
-  if (!gps.location.isValid()) {
+  bool   hasFix = gps.location.isValid();
+  int    sats   = gps.satellites.isValid() ? (int)gps.satellites.value() : 0;
+
+  if (!hasFix) {
     uint32_t chars = gps.charsProcessed();
-    uint32_t sats  = gps.satellites.isValid() ? gps.satellites.value() : 0;
     if (chars < 10) {
-      // GPS serial not wired or wrong baud — no NMEA data arriving at all
-      Serial.println("[GPS] NO DATA from module — check TX->GPIO16 wiring and 9600 baud");
+      Serial.println("[GPS] NO DATA — check TX->GPIO16 wiring");
     } else {
-      // Data arriving, just waiting for satellite lock
-      Serial.printf("[GPS] Waiting for fix — chars=%lu  sats=%lu  (go outdoors / near window)\n",
-                    (unsigned long)chars, (unsigned long)sats);
+      Serial.printf("[GPS] No fix yet — chars=%lu sats=%d\n", (unsigned long)chars, sats);
     }
-    return;
   }
 
-  double lat  = gps.location.lat();
-  double lng  = gps.location.lng();
-  double alt  = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
-  int    sats = gps.satellites.isValid() ? (int)gps.satellites.value() : 0;
+  double lat = hasFix ? gps.location.lat() : 0.0;
+  double lng = hasFix ? gps.location.lng() : 0.0;
+  double alt = hasFix && gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
 
-  sendData(lat, lng, alt, sats);  // updates findActive from server response
+  // Always ping server — even without fix — so find flag stays in sync
+  sendData(lat, lng, alt, sats, hasFix);
 }
