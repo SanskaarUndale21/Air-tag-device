@@ -1,0 +1,23 @@
+# Dependencies
+findit/node_modules/
+findit/.next/
+findit/out/
+
+# Env files - never commit secrets
+findit/.env.local
+findit/.env.*.local
+.env.local
+.env
+
+# Build artifacts
+findit/.next/
+findit/out/
+findit/dist/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log
+
+# Claude internal
+.claude/
