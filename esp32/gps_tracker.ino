@@ -24,11 +24,11 @@
 #include <HardwareSerial.h>
 
 // ─── USER CONFIG ────────────────────────────────────────────────
-#define WIFI_SSID      "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD  "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID      "CE5"
+#define WIFI_PASSWORD  "00000000"
 
 // Copy your Render URL here (no trailing slash)
-#define SERVER_URL     "https://your-app-name.onrender.com/api/data"
+#define SERVER_URL     "https://air-tag-device.onrender.com/api/data"
 
 #define SEND_INTERVAL_MS   3000   // how often to send GPS data (ms)
 // ────────────────────────────────────────────────────────────────
@@ -140,7 +140,16 @@ void loop() {
   }
 
   if (!gps.location.isValid()) {
-    Serial.println("No GPS fix yet...");
+    uint32_t chars = gps.charsProcessed();
+    uint32_t sats  = gps.satellites.isValid() ? gps.satellites.value() : 0;
+    if (chars < 10) {
+      // GPS serial not wired or wrong baud — no NMEA data arriving at all
+      Serial.println("[GPS] NO DATA from module — check TX->GPIO16 wiring and 9600 baud");
+    } else {
+      // Data arriving, just waiting for satellite lock
+      Serial.printf("[GPS] Waiting for fix — chars=%lu  sats=%lu  (go outdoors / near window)\n",
+                    (unsigned long)chars, (unsigned long)sats);
+    }
     return;
   }
 
