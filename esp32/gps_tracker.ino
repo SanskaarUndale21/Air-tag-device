@@ -69,15 +69,22 @@ void setup() {
   Serial.println("\nConnected: " + WiFi.localIP().toString());
 }
 
-// ─── Buzz/LED alert ──────────────────────────────────────────────
-void buzz(int count) {
-  for (int i = 0; i < count; i++) {
-    digitalWrite(BUZZER_PIN, HIGH);
-    digitalWrite(LED_PIN, HIGH);
-    delay(350);
+// ─── Non-blocking continuous beep (called every loop tick) ──────
+void handleBuzzer() {
+  static unsigned long lastToggle = 0;
+  static bool state = false;
+
+  if (findActive) {
+    if (millis() - lastToggle >= 300) {
+      lastToggle = millis();
+      state = !state;
+      digitalWrite(BUZZER_PIN, state ? HIGH : LOW);
+      digitalWrite(LED_PIN,    state ? HIGH : LOW);
+    }
+  } else {
     digitalWrite(BUZZER_PIN, LOW);
     digitalWrite(LED_PIN, LOW);
-    delay(150);
+    state = false;
   }
 }
 
@@ -127,6 +134,9 @@ void loop() {
     gps.encode(gpsSerial.read());
   }
 
+  // Buzzer runs every tick — independent of send interval
+  handleBuzzer();
+
   // Throttle sends
   if (millis() - lastSend < SEND_INTERVAL_MS) return;
   lastSend = millis();
@@ -158,13 +168,5 @@ void loop() {
   double alt  = gps.altitude.isValid() ? gps.altitude.meters() : 0.0;
   int    sats = gps.satellites.isValid() ? (int)gps.satellites.value() : 0;
 
-  bool ok = sendData(lat, lng, alt, sats);
-
-  // React to find flag
-  if (ok && findActive) {
-    buzz(3);
-  } else if (!findActive) {
-    digitalWrite(BUZZER_PIN, LOW);
-    digitalWrite(LED_PIN, LOW);
-  }
+  sendData(lat, lng, alt, sats);  // updates findActive from server response
 }
